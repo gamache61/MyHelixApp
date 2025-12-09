@@ -1,0 +1,469 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=0, interactive-widget=resizes-content">
+<title>Helix AI v2</title>
+
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#000000">
+
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<script>
+  window.MathJax = {
+    tex: { inlineMath: [['$', '$'], ['\\(', '\\)']] },
+    svg: { fontCache: 'global' }
+  };
+</script>
+<script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+
+<style>
+  /* --- LAYOUT --- */
+  body {
+    background: #000; color: #fff;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, sans-serif;
+    height: 100dvh; width: 100vw; margin: 0; overflow: hidden; display: flex; flex-direction: column;
+  }
+    
+  /* --- SCENE --- */
+  #scene {
+    height: 25%; min-height: 140px;
+    display: flex; justify-content: center; align-items: center;
+    background: radial-gradient(circle at center, #1a1a1a 0%, #000 100%);
+    flex-shrink: 0; position: relative; border-bottom: 1px solid #333;
+  }
+  body.dev-mode #scene { background: radial-gradient(circle at center, #150015 0%, #000 100%); }
+
+  /* --- ORB --- */
+  #core {
+    width: 90px; height: 90px;
+    background: radial-gradient(circle at 30% 30%, #fff, #0ff, #001);
+    border-radius: 50%;
+    box-shadow: 0 0 30px cyan;
+    animation: float 6s ease-in-out infinite;
+    display: flex; justify-content: center; align-items: center;
+    position: relative; z-index: 2; transition: all 0.4s;
+  }
+  #core span { font-size: 10px; font-weight: 900; letter-spacing: 1px; color: rgba(0,0,0,0.7); font-family: monospace; pointer-events: none; }
+  
+  /* States */
+  #core.listening { background: radial-gradient(circle at 30% 30%, #fff, #5f5, #010) !important; box-shadow: 0 0 60px lime !important; transform: scale(1.15); }
+  #core.thinking { background: radial-gradient(circle at 30% 30%, #fff, #fb0, #420) !important; box-shadow: 0 0 50px orange !important; animation: pulseFast 0.5s alternate infinite !important; transform: scale(0.95); }
+  #core.talking { background: radial-gradient(circle at 30% 30%, #fff, #a0f, #205) !important; box-shadow: 0 0 60px #a0f !important; animation: pulse 0.3s alternate infinite !important; }
+
+  @keyframes float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-10px); } }
+  @keyframes pulse { 0% { transform: scale(1); } 100% { transform: scale(1.08); } }
+  @keyframes pulseFast { 0% { transform: scale(0.95); opacity: 0.8; } 100% { transform: scale(1.0); opacity: 1; } }
+
+  /* --- CAMERA OVERLAY --- */
+  #camera-container {
+    display: none; position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+    background: #000; z-index: 10; flex-direction: column; justify-content: center; align-items: center;
+  }
+  video { width: 100%; height: 100%; object-fit: cover; }
+  #cam-overlay-text {
+    position: absolute; bottom: 30px; left: 0; width: 100%; text-align: center;
+    color: cyan; font-family: monospace; font-size: 14px; background: rgba(0,0,0,0.6); padding: 10px;
+    pointer-events: none;
+  }
+
+  /* --- UI LAYER --- */
+  #ui-layer {
+    flex: 1; display: flex; flex-direction: column; padding: 10px;
+    background: #0a0a0a; gap: 10px; overflow: hidden;
+  }
+
+  /* Header */
+  #header-row { display: flex; justify-content: space-between; align-items: center; min-height: 30px; flex-shrink: 0; gap: 10px; }
+  .switch { position: relative; display: inline-block; width: 40px; height: 20px; }
+  .switch input { opacity: 0; width: 0; height: 0; }
+  .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #333; transition: .4s; border-radius: 34px; }
+  .slider:before { position: absolute; content: ""; height: 14px; width: 14px; left: 3px; bottom: 3px; background-color: white; transition: .4s; border-radius: 50%; }
+  input:checked + .slider { background-color: #90f; }
+  input:checked + .slider:before { transform: translateX(20px); }
+  
+  #api-key-input { flex-grow: 1; background: #111; border: 1px solid #333; color: #555; border-radius: 4px; padding: 2px 8px; font-size: 10px; font-family: monospace; }
+  #api-key-input:focus { color: cyan; border-color: cyan; outline: none; }
+
+  /* Console */
+  #console {
+    flex-grow: 1; min-height: 0; overflow-y: auto;
+    padding: 10px; border: 1px solid #222; border-radius: 8px; background: #000;
+    display: flex; flex-direction: column; gap: 15px;
+    -webkit-user-select: text; user-select: text;
+  }
+  .msg { padding: 10px; border-radius: 8px; font-size: 15px; max-width: 95%; line-height: 1.5; word-wrap: break-word; }
+  .user { align-self: flex-end; background: #222; color: #fff; border-bottom-right-radius: 2px; }
+  .ai { align-self: flex-start; color: #ddd; border: 1px solid #333; width: 100%; box-sizing: border-box; background: #050505; border-bottom-left-radius: 2px; }
+  
+  /* Markdown Styling */
+  .ai p { margin: 0 0 10px 0; }
+  .ai pre { background: #111; padding: 10px; border-radius: 5px; overflow-x: auto; border: 1px solid #333; }
+  .ai code { font-family: monospace; color: #d4d4d4; font-size: 13px; }
+  .ai strong { color: #fff; font-weight: 700; }
+  .ai table { border-collapse: collapse; width: 100%; margin: 10px 0; font-size: 12px; }
+  .ai th, .ai td { border: 1px solid #333; padding: 6px; text-align: left; }
+  .ai th { background: #222; }
+
+  /* Controls */
+  #controls { display: flex; flex-direction: column; gap: 8px; flex-shrink: 0; }
+  
+  #image-preview {
+    display: none; width: 60px; height: 60px; border-radius: 8px;
+    border: 2px solid cyan; background-size: cover; background-position: center;
+    margin-bottom: 5px; align-self: flex-start; position: relative;
+  }
+  #remove-img {
+    position: absolute; top: -8px; right: -8px; background: red; color: white;
+    border-radius: 50%; width: 20px; height: 20px; text-align: center; font-size: 12px;
+    line-height: 20px; cursor: pointer; border: 1px solid #fff;
+  }
+
+  #input-row { display: flex; gap: 8px; }
+  #txt-input { flex-grow: 1; padding: 12px; border-radius: 12px; border: 1px solid #333; background: #111; color: white; font-size: 16px; outline: none; }
+  
+  .action-btn { width: 40px; background: #222; color: #aaa; border: 1px solid #333; border-radius: 12px; font-size: 18px; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+  .action-btn:active { background: #444; color: cyan; }
+  
+  #send-btn { width: 50px; background: #222; color: cyan; border: 1px solid #333; border-radius: 12px; font-size: 20px; cursor: pointer; }
+  #mic-btn { padding: 15px; background: #222; color: #fff; border: 1px solid #444; border-radius: 12px; font-weight: bold; font-size: 16px; cursor: pointer; width: 100%; transition: 0.2s; }
+  #mic-btn.active { background: #060; border-color: lime; color: #fff; box-shadow: 0 0 15px #060; }
+  
+  #file-input-gal { display: none; }
+  canvas { display: none; }
+</style>
+</head>
+<body>
+
+<div id="scene">
+    <div id="core"><span id="orb-text">HELIX</span></div>
+    
+    <div id="camera-container" onclick="snapPhoto()">
+        <video id="cam-feed" autoplay playsinline></video>
+        <div id="cam-overlay-text">TAP ANYWHERE TO CAPTURE</div>
+    </div>
+</div>
+
+<div id="ui-layer">
+  <div id="header-row">
+    <label class="switch">
+      <input type="checkbox" id="dev-toggle" onchange="toggleDevMode()">
+      <span class="slider"></span>
+    </label>
+    <input type="password" id="api-key-input" placeholder="PASTE GOOGLE API KEY HERE" onchange="saveKey()">
+    <button class="action-btn" style="width:30px; height:30px; font-size:14px;" onclick="clearConversation()">🗑️</button>
+  </div>
+
+  <div id="console"></div>
+    
+  <div id="controls">
+    <div id="image-preview">
+        <div id="remove-img" onclick="clearImage()">×</div>
+    </div>
+
+    <div id="input-row">
+        <input type="file" id="file-input-gal" accept="image/*" onchange="handleImageSelect(event)">
+        
+        <button class="action-btn" onclick="startCamera()">📷</button>
+        <button class="action-btn" onclick="document.getElementById('file-input-gal').click()">🖼️</button>
+        
+        <input id="txt-input" placeholder="Type message..." autocomplete="off" onkeydown="if(event.key==='Enter') sendText()">
+        <button id="send-btn" onclick="sendText()">➤</button>
+    </div>
+    <button id="mic-btn" onclick="handleMicClick()">🎙️ TAP TO SPEAK</button>
+  </div>
+</div>
+
+<canvas id="cam-canvas"></canvas>
+
+<script>
+// --- CONFIGURATION ---
+let apiKey = localStorage.getItem('helix_api_key') || "";
+
+// --- VARIABLES ---
+let history = [];
+let recognition = null;
+let synth = window.speechSynthesis;
+let conversationActive = false;
+let isSpeaking = false;
+let isDevMode = false;
+let currentImage = null;
+let currentMimeType = null;
+let videoStream = null;
+
+// --- INITIALIZATION ---
+document.getElementById('api-key-input').value = apiKey;
+window.onload = loadHistory;
+
+// --- ORB LOGIC ---
+function updateOrb(state, text) {
+    const orb = document.getElementById('core');
+    const label = document.getElementById('orb-text');
+    orb.className = '';
+    if (state) orb.classList.add(state);
+    label.innerText = text;
+}
+
+// --- API KEY MGR ---
+function saveKey() {
+    apiKey = document.getElementById('api-key-input').value.trim();
+    localStorage.setItem('helix_api_key', apiKey);
+    addMessage('System', 'API Key Saved securely.', false);
+}
+
+// --- VOICE LOGIC ---
+function getVoice() {
+    let voices = synth.getVoices();
+    return voices.find(v => v.name === 'Samantha') || 
+           voices.find(v => v.name.includes('Google US English')) || 
+           voices.find(v => v.lang === 'en-US' && v.name.includes('Female')) || 
+           voices[0];
+}
+
+function toggleDevMode() {
+    isDevMode = document.getElementById('dev-toggle').checked;
+    document.body.classList.toggle('dev-mode', isDevMode);
+    addMessage("System", isDevMode ? "Dev Mode: Full Code Output" : "Standard Mode: Concise", false);
+}
+
+// --- CAMERA ---
+async function startCamera() {
+    const camContainer = document.getElementById('camera-container');
+    const video = document.getElementById('cam-feed');
+    try {
+        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+        videoStream = stream;
+        video.srcObject = stream;
+        camContainer.style.display = 'flex';
+    } catch (err) {
+        alert("Camera access denied or unavailable.");
+    }
+}
+
+function snapPhoto() {
+    if (!videoStream) return;
+    const video = document.getElementById('cam-feed');
+    const canvas = document.getElementById('cam-canvas');
+    
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    canvas.getContext('2d').drawImage(video, 0, 0);
+    
+    currentImage = canvas.toDataURL('image/jpeg').split(',')[1];
+    currentMimeType = 'image/jpeg';
+    
+    stopCamera();
+    showPreview(canvas.toDataURL('image/jpeg'));
+}
+
+function stopCamera() {
+    if(videoStream) videoStream.getTracks().forEach(t => t.stop());
+    videoStream = null;
+    document.getElementById('camera-container').style.display = 'none';
+}
+
+// --- IMAGE HANDLING ---
+function handleImageSelect(event) {
+    const file = event.target.files[0];
+    if (file) {
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            currentImage = e.target.result.split(',')[1];
+            currentMimeType = file.type;
+            showPreview(e.target.result);
+        };
+        reader.readAsDataURL(file);
+    }
+    event.target.value = '';
+}
+
+function showPreview(url) {
+    const preview = document.getElementById('image-preview');
+    preview.style.display = 'block';
+    preview.style.backgroundImage = `url(${url})`;
+}
+
+function clearImage() {
+    currentImage = null;
+    currentMimeType = null;
+    document.getElementById('image-preview').style.display = 'none';
+}
+
+// --- MEMORY ---
+function saveHistory() {
+    // We don't save image data to localStorage to avoid quota limits
+    let clean = history.map(h => ({ role: h.role, text: h.text.includes("[Image") ? "[Image Data]" : h.text }));
+    localStorage.setItem('helix_chat_history', JSON.stringify(clean));
+}
+
+function loadHistory() {
+    let saved = localStorage.getItem('helix_chat_history');
+    if (saved) {
+        history = JSON.parse(saved);
+        history.forEach(item => addMessage(item.role === 'user' ? 'user' : 'model', item.text, false));
+    } else {
+        addMessage('model', "Helix Online. Please enter API Key.", false);
+    }
+}
+
+function clearConversation() {
+    if(confirm("Wipe Memory?")) {
+        history = [];
+        localStorage.removeItem('helix_chat_history');
+        document.getElementById('console').innerHTML = '';
+        addMessage('model', "Memory Wiped.", false);
+    }
+}
+
+// --- SPEECH ---
+function speak(text) {
+    synth.cancel();
+    // Strip markdown chars for smoother speech
+    let cleanText = text.replace(/[*#`]/g, '').replace(/<[^>]*>/g, '');
+    let u = new SpeechSynthesisUtterance(cleanText);
+    u.voice = getVoice();
+    u.rate = 1.0; 
+    u.pitch = 1.1;
+
+    u.onstart = () => { isSpeaking = true; updateOrb('talking', 'SPEAKING'); };
+    u.onend = () => { 
+        isSpeaking = false; 
+        updateOrb('', 'HELIX'); 
+        if (conversationActive) startListening(); 
+    };
+    synth.speak(u);
+}
+
+// --- RECOGNITION ---
+if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    recognition = new SpeechRecognition();
+    recognition.continuous = false;
+    recognition.lang = 'en-US';
+
+    recognition.onstart = () => {
+        updateOrb('listening', 'LISTENING');
+        document.getElementById('mic-btn').classList.add('active');
+    };
+    recognition.onend = () => {
+        if (!isSpeaking) {
+             document.getElementById('mic-btn').classList.remove('active');
+             updateOrb('', 'HELIX');
+        }
+    };
+    recognition.onresult = (event) => {
+        const transcript = event.results[0][0].transcript;
+        if(transcript) askGemini(transcript);
+    };
+}
+
+function startListening() {
+    if (isSpeaking) return;
+    try { recognition.start(); } catch(e) {}
+}
+
+function handleMicClick() {
+    // Unlock Audio Context on iOS
+    let u = new SpeechSynthesisUtterance(""); synth.speak(u);
+    
+    if (conversationActive) {
+        conversationActive = false;
+        recognition.stop();
+        synth.cancel();
+        isSpeaking = false;
+        document.getElementById('mic-btn').classList.remove('active');
+        updateOrb('', 'HELIX');
+    } else {
+        conversationActive = true;
+        startListening();
+    }
+}
+
+// --- CORE AI LOGIC ---
+function sendText() {
+    let input = document.getElementById('txt-input');
+    let text = input.value.trim();
+    if (text || currentImage) {
+        input.value = "";
+        conversationActive = false; // Stop auto-listen loop on manual type
+        if(recognition) recognition.stop();
+        askGemini(text);
+    }
+}
+
+async function askGemini(txt) {
+    if (!apiKey) { alert("Please enter API Key at the top"); return; }
+    
+    let displayTxt = txt || "Analyze this image";
+    if (currentImage) displayTxt += " [Image Attached]";
+    
+    addMessage('user', displayTxt, true);
+    updateOrb('thinking', 'THINKING');
+    
+    let instruction = isDevMode 
+        ? "You are Helix, an expert Engineer. Provide strictly correct, commented code. Use LaTeX for math." 
+        : "You are Helix. Be helpful, concise, and friendly. Use LaTeX for math.";
+    
+    // Build Payload
+    let contents = [];
+    // Inject previous history (limit last 10 turns to save tokens)
+    let recentHistory = history.slice(-10);
+    recentHistory.forEach(h => {
+        if(h.text !== "[Image Data]") contents.push({ role: h.role, parts: [{ text: h.text }] });
+    });
+
+    let currentParts = [];
+    if (txt) currentParts.push({ text: txt });
+    if (currentImage) {
+        currentParts.push({ inline_data: { mime_type: currentMimeType, data: currentImage } });
+    }
+    contents.push({ role: 'user', parts: currentParts });
+
+    try {
+        let req = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ contents, system_instruction: { parts: [{ text: instruction }] } })
+        });
+
+        let res = await req.json();
+        if(res.error) throw new Error(res.error.message);
+        
+        let ans = res.candidates[0].content.parts[0].text;
+
+        if(currentImage) clearImage();
+        
+        history.push({role:'user', text: txt || "[Image Sent]"});
+        history.push({role:'model', text: ans});
+        saveHistory();
+
+        addMessage('model', ans, false);
+        speak(ans);
+    } catch(e) {
+        addMessage('model', "Error: " + e.message, false);
+        updateOrb('', 'ERROR');
+        speak("I encountered an error.");
+    }
+}
+
+// --- FORMATTING & RENDER ---
+function addMessage(role, text, save) {
+    let c = document.getElementById('console');
+    let d = document.createElement('div');
+    d.className = 'msg ' + (role === 'user' ? 'user' : 'ai');
+    
+    if(role === 'user') {
+        d.innerText = text;
+    } else {
+        // Use Marked.js for rendering
+        d.innerHTML = marked.parse(text);
+        // Trigger MathJax render
+        if(window.MathJax) MathJax.typesetPromise([d]);
+    }
+    
+    c.appendChild(d);
+    c.scrollTop = c.scrollHeight;
+}
+</script>
+</body>
+</html>
