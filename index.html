@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=0">
+<title>Helix AI</title>
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#000000">
+
+<style>
+  body { background: #000; color: #fff; font-family: monospace; height: 100vh; margin: 0; display: flex; flex-direction: column; overflow: hidden; }
+  
+  /* OVERLAY */
+  #start-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: #000; z-index: 9999; display: flex; flex-direction: column; justify-content: center; align-items: center; }
+  #start-btn { padding: 20px 40px; border: 2px solid #0f0; background: #002200; color: #0f0; font-size: 18px; font-weight: bold; border-radius: 12px; }
+
+  /* MAIN UI */
+  #header { padding: 15px; background: #111; border-bottom: 1px solid #333; display: flex; justify-content: space-between; align-items: center; }
+  #scene { flex: 1; display: flex; justify-content: center; align-items: center; position: relative; background: radial-gradient(circle, #222, #000); }
+  
+  #core { width: 100px; height: 100px; border-radius: 50%; background: #fff; box-shadow: 0 0 40px #fff; display: flex; justify-content: center; align-items: center; color: #000; font-weight: 900; transition: 0.2s; }
+  #core.talking { background: #a0f; box-shadow: 0 0 60px #a0f; transform: scale(1.1); }
+  #core.listening { background: #0f0; box-shadow: 0 0 60px #0f0; }
+  #core.thinking { background: #fa0; box-shadow: 0 0 60px #fa0; transform: scale(0.9); }
+  #core.error { background: #f00; }
+
+  #console { height: 40%; background: #0a0a0a; overflow-y: auto; padding: 15px; display: flex; flex-direction: column; gap: 10px; border-top: 1px solid #333; }
+  .msg { padding: 10px; border-radius: 6px; font-size: 14px; max-width: 90%; }
+  .user { align-self: flex-end; background: #222; color: #fff; border: 1px solid #444; }
+  .ai { align-self: flex-start; background: #111; color: #ccc; border: 1px solid #333; }
+  .sys { align-self: center; color: #666; font-size: 10px; font-style: italic; }
+  .err { align-self: center; color: #f55; border: 1px solid #500; background: #200; padding: 5px; font-size: 10px; }
+
+  /* CONTROLS */
+  #controls { padding: 15px; background: #000; border-top: 1px solid #333; display: flex; flex-direction: column; gap: 10px; }
+  #input-row { display: flex; gap: 10px; }
+  input { flex: 1; padding: 10px; background: #111; border: 1px solid #333; color: #fff; border-radius: 5px; }
+  button { padding: 10px; background: #222; border: 1px solid #444; color: #fff; border-radius: 5px; cursor: pointer; }
+  #mic-btn { width: 100%; padding: 15px; font-weight: bold; font-size: 16px; background: #1a1a1a; }
+  #mic-btn.active { background: #060; border-color: #0f0; color: #fff; }
+
+  /* CAMERA */
+  #cam-container { display: none; position: absolute; top:0; left:0; width:100%; height:100%; background:#000; z-index: 500; }
+  video { width: 100%; height: 100%; object-fit: cover; }
+  #cam-close { position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%); padding: 15px 30px; background: #f00; color: #fff; border-radius: 30px; font-weight: bold; }
+</style>
+</head>
+<body>
+
+<div id="start-overlay">
+    <button id="start-btn" onclick="startSystem()">TAP TO START SYSTEM</button>
+    <p style="color:#aaa; margin-top:15px; font-size:12px;">Turn Volume UP. Turn Silent Mode OFF.</p>
+</div>
+
+<div id="header">
+    <button onclick="askKey()">KEY</button>
+    <span>HELIX 3.0</span>
+    <button onclick="testAudio()">🔊 TEST</button>
+</div>
+
+<div id="scene">
+    <div id="core">IDLE</div>
+    <div id="cam-container">
+        <video id="cam-feed" playsinline autoplay></video>
+        <button id="cam-close" onclick="snap()">CAPTURE</button>
+    </div>
+</div>
+
+<div id="console"></div>
+
+<div id="controls">
+    <div id="input-row">
+        <button onclick="openCam()">📷</button>
+        <input id="txt" placeholder="Type here..." onkeydown="if(event.key==='Enter') send()">
+        <button onclick="send()">➤</button>
+    </div>
+    <button id="mic-btn" onclick="toggleMic()">🎙️ MIC: OFF</button>
+</div>
+
+<canvas id="canvas" style="display:none;"></canvas>
+
+<script>
+// === CONFIG ===
+const SYSTEM_PROMPT = "You are Helix. Be concise.";
+const MODEL = "gemini-2.5-flash-lite-preview-09-2025";
+
+// === VARIABLES ===
+let key = localStorage.getItem("helix_key") || "";
+let history = [];
+let recognition;
+let synth = window.speechSynthesis;
+let micActive = false;
+let isSpeaking = false;
+let audioCtx;
+let silenceLoop;
+
+// === INIT ===
+function startSystem() {
+    // 1. Initialize Audio Context (The "Heartbeat")
+    try {
+        const AudioContext = window.AudioContext || window.webkitAudioContext;
+        audioCtx = new AudioContext();
+        
+        // Create a silent oscillator to keep the audio engine warm
+        silenceLoop = audioCtx.createOscillator();
+        const gainNode = audioCtx.createGain();
+        gainNode.gain.value = 0.0001; // Almost silent
+        silenceLoop.connect(gainNode);
+        gainNode.connect(audioCtx.destination);
+        silenceLoop.start();
+        
+        document.getElementById('start-overlay').style.display = 'none';
+        log('sys', "Audio Engine Engaged.");
+        
+        if(!key) setTimeout(askKey, 500);
+        else log('sys', "System Ready.");
+        
+    } catch(e) {
+        alert("Audio Init Failed: " + e);
+    }
+}
+
+function askKey() {
+    let k = prompt("Enter Google Gemini API Key:");
+    if(k && k.length > 10) {
+        localStorage.setItem("helix_key", k.trim());
+        key = k.trim();
+        log('sys', "Key Saved.");
+    }
+}
+
+function testAudio() {
+    log('sys', "Testing Audio...");
+    // Hard reset of speech engine
+    synth.cancel();
+    let u = new SpeechSynthesisUtterance("Audio check. One, two, three.");
+    u.volume = 1;
+    u.rate = 1;
+    u.onend = () => log('sys', "Audio Test Complete.");
+    u.onerror = (e) => log('err', "Audio Error: " + e.error);
+    synth.speak(u);
+}
+
+function updateCore(state, text) {
+    let el = document.getElementById('core');
+    el.className = state;
+    el.innerText = text || state.toUpperCase();
+}
+
+function log(role, text) {
+    let div = document.createElement('div');
+    div.className = "msg " + role;
+    div.innerText = text;
+    let c = document.getElementById('console');
+    c.appendChild(div);
+    c.scrollTop = c.scrollHeight;
+}
+
+// === SEND LOGIC ===
+async function send() {
+    let input = document.getElementById('txt');
+    let text = input.value.trim();
+    
+    // Stop mic temporarily so it doesn't hear itself
+    if(recognition) recognition.stop();
+    
+    if(!text && !currentImgData) return;
+    if(!key) { askKey(); return; }
+
+    input.value = "";
+    log('user', text || "[Image]");
+    updateCore('thinking');
+
+    // Build payload
+    let parts = [];
+    if(text) parts.push({text: text});
+    if(currentImgData) {
+        parts.push({inline_data: {mime_type: "image/jpeg", data: currentImgData}});
+        currentImgData = null; // Clear image after send
+    }
+
+    let userMsg = { role: 'user', parts: parts };
+    let newHistory = [...history, userMsg];
+
+    try {
+        let resp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${key}`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                contents: newHistory,
+                system_instruction: { parts: [{text: SYSTEM_PROMPT}] }
+            })
+        });
+        
+        let data = await resp.json();
+        if(data.error) throw new Error(data.error.message);
+        
+        let aiText = data.candidates[0].content.parts[0].text;
+        
+        history.push(userMsg);
+        history.push({role:'model', parts:[{text: aiText}]});
+        
+        log('ai', aiText);
+        speak(aiText);
+
+    } catch(e) {
+        log('err', e.message);
+        updateCore('error');
+        // Restart mic if we were using it
+        if(micActive) startMic();
+    }
+}
+
+// === SPEECH ===
+function speak(text) {
+    // 1. Clean text
+    let clean = text.replace(/[*#]/g, '');
+    
+    // 2. Prepare
+    synth.cancel(); // Stop any pending speech
+    isSpeaking = true;
+    updateCore('talking');
+    
+    // 3. Create Utterance
+    let u = new SpeechSynthesisUtterance(clean);
+    u.lang = 'en-US';
+    u.rate = 1.0;
+    
+    // 4. Mobile Fix: Force voice selection if available
+    let voices = synth.getVoices();
+    let v = voices.find(v => v.lang === 'en-US');
+    if(v) u.voice = v;
+
+    // 5. Events
+    u.onend = () => {
+        isSpeaking = false;
+        updateCore(micActive ? 'listening' : '');
+        if(micActive) startMic(); // Resume listening
+    };
+    
+    u.onerror = (e) => {
+        isSpeaking = false;
+        log('err', "TTS Blocked/Failed: " + e.error);
+        if(micActive) startMic();
+    };
+
+    // 6. GO
+    synth.speak(u);
+    
+    // 7. Safety Timeout (if browser blocks event)
+    // If it doesn't finish in 10s, force reset
+    setTimeout(() => {
+        if(isSpeaking) {
+            isSpeaking = false;
+            if(micActive) startMic();
+        }
+    }, 10000);
+}
+
+// === MIC ===
+if('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    recognition = new SR();
+    recognition.continuous = false; // We handle loop manually for stability
+    recognition.lang = 'en-US';
+
+    recognition.onstart = () => {
+        updateCore('listening');
+    };
+
+    recognition.onresult = (e) => {
+        let t = e.results[0][0].transcript;
+        document.getElementById('txt').value = t;
+        send(); // Send immediately
+    };
+
+    recognition.onend = () => {
+        // If mic supposed to be on, and not AI talking, restart
+        if(micActive && !isSpeaking) {
+            startMic();
+        } else {
+            // It stopped naturally
+            if(!isSpeaking) updateCore('');
+        }
+    };
+    
+    recognition.onerror = (e) => {
+        if(e.error === 'no-speech') {
+            // Just silence, restart loop
+            if(micActive && !isSpeaking) startMic();
+        } else {
+            console.log("Mic Error: " + e.error);
+        }
+    }
+} else {
+    log('err', "Browser does not support Speech Recognition");
+}
+
+function toggleMic() {
+    if(!recognition) return alert("Mic not supported");
+    
+    // Resume audio context just in case
+    if(audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+    
+    micActive = !micActive;
+    let btn = document.getElementById('mic-btn');
+    
+    if(micActive) {
+        btn.classList.add('active');
+        btn.innerText = "🛑 MIC: ON";
+        startMic();
+    } else {
+        btn.classList.remove('active');
+        btn.innerText = "🎙️ MIC: OFF";
+        recognition.stop();
+        synth.cancel(); // Stop talking if talking
+        isSpeaking = false;
+        updateCore('');
+    }
+}
+
+function startMic() {
+    try { recognition.start(); } catch(e) {}
+}
+
+// === CAMERA ===
+let currentImgData = null;
+async function openCam() {
+    try {
+        let stream = await navigator.mediaDevices.getUserMedia({video: {facingMode: 'environment'}});
+        let vid = document.getElementById('cam-feed');
+        vid.srcObject = stream;
+        document.getElementById('cam-container').style.display = 'block';
+    } catch(e) { alert("Cam Error: " + e); }
+}
+
+function snap() {
+    let vid = document.getElementById('cam-feed');
+    let cvs = document.getElementById('canvas');
+    cvs.width = vid.videoWidth;
+    cvs.height = vid.videoHeight;
+    cvs.getContext('2d').drawImage(vid, 0, 0);
+    currentImgData = cvs.toDataURL('image/jpeg').split(',')[1];
+    
+    // Stop cam
+    vid.srcObject.getTracks().forEach(t => t.stop());
+    document.getElementById('cam-container').style.display = 'none';
+    
+    // Auto send prompt
+    log('sys', "Image Captured. Say something...");
+    if(micActive) startMic();
+}
+</script>
+</body>
+</html>
