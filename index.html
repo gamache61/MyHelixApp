@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=0">
+<title>Helix AI</title>
+
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#000000">
+<link rel="icon" type="image/png" href="icon.png">
+<link rel="apple-touch-icon" href="icon.png">
+
+<style>
+  /* --- LAYOUT --- */
+  body { 
+    background: #000; color: #fff; 
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, monospace; 
+    height: 100vh; margin: 0; display: flex; flex-direction: column; overflow: hidden; 
+    -webkit-user-select: auto; user-select: auto; 
+    touch-action: manipulation;
+  }
+
+  /* --- START OVERLAY --- */
+  #start-overlay {
+    position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+    background: #000; z-index: 9000;
+    display: flex; flex-direction: column; justify-content: center; align-items: center;
+  }
+  #start-btn {
+    padding: 20px 40px; border: 2px solid #0f0; background: #002200; color: #0f0;
+    font-size: 18px; font-weight: bold; border-radius: 12px; cursor: pointer;
+    box-shadow: 0 0 20px #0f0; text-transform: uppercase; letter-spacing: 2px;
+  }
+
+  /* --- SETTINGS MODAL --- */
+  #settings-modal {
+    display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+    background: rgba(0,0,0,0.95); z-index: 2000;
+    flex-direction: column; justify-content: center; align-items: center;
+  }
+  #settings-box { width: 85%; max-width: 400px; background: #111; padding: 20px; border: 1px solid #333; border-radius: 12px; }
+  
+  label { font-size: 10px; color: #aaa; display: block; margin-bottom: 5px; }
+  input, select { width: 100%; padding: 10px; background: #222; color: #fff; border: 1px solid #444; margin-bottom: 15px; border-radius: 6px; box-sizing: border-box; }
+  
+  .close-btn { width: 100%; padding: 12px; background: #444; color: #fff; border: none; border-radius: 6px; cursor: pointer; }
+  .wipe-btn { width: 100%; padding: 12px; background: #300; color: #f55; border: 1px solid #f00; border-radius: 6px; cursor: pointer; margin-top: 10px; }
+
+  /* --- HEADER --- */
+  #header-row { 
+    display: flex; justify-content: space-between; align-items: center; 
+    padding: 15px; background: #111; border-bottom: 1px solid #333; flex-shrink: 0; z-index: 10;
+    padding-top: max(15px, env(safe-area-inset-top)); 
+  }
+  
+  button { font-weight: bold; cursor: pointer; border-radius: 6px; border: none; }
+  #key-btn { background: #222; border: 1px solid #00ffcc; color: #00ffcc; padding: 8px 15px; }
+  #menu-btn { background: #222; border: 1px solid #aaa; color: #aaa; padding: 8px 12px; }
+
+  /* --- SCENE --- */
+  #scene {
