@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=0">
+<title>Helix v45 (Debug)</title>
+
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' fill='black'/><circle cx='50' cy='50' r='40' stroke='cyan' stroke-width='5' fill='none'/><text x='50' y='65' font-family='sans-serif' font-size='50' fill='cyan' text-anchor='middle'>H</text></svg>">
+<link rel="apple-touch-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' fill='black'/><circle cx='50' cy='50' r='40' stroke='cyan' stroke-width='5' fill='none'/><text x='50' y='65' font-family='sans-serif' font-size='50' fill='cyan' text-anchor='middle'>H</text></svg>">
+
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#000000">
+
+<style>
+  /* --- LAYOUT --- */
+  body { background: #000; color: #fff; font-family: monospace; height: 100dvh; margin: 0; display: flex; flex-direction: column; overflow: hidden; }
+  
+  /* --- OVERLAY --- */
+  #boot-screen { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: #000; z-index: 10000; display: flex; justify-content: center; align-items: center; flex-direction: column; }
+  #boot-btn { padding: 20px 40px; border: 2px solid cyan; background: #002222; color: cyan; font-size: 20px; font-family: monospace; cursor: pointer; border-radius: 8px; box-shadow: 0 0 20px cyan; }
+
+  /* --- SCENE --- */
+  #scene { height: 25%; min-height: 140px; display: flex; justify-content: center; align-items: center; background: radial-gradient(circle at center, #111 0%, #000 100%); border-bottom: 1px solid #333; position: relative; }
+  #core { width: 90px; height: 90px; background: #fff; border-radius: 50%; box-shadow: 0 0 30px cyan; display: flex; justify-content: center; align-items: center; z-index: 2; transition: 0.3s; }
+  #core span { color: #000; font-weight: bold; }
+  
+  #core.talking { background: #d0f; box-shadow: 0 0 50px #d0f; transform: scale(1.1); }
+  #core.thinking { background: #fa0; box-shadow: 0 0 50px #fa0; transform: scale(0.9); }
+  #core.error { background: #f00; box-shadow: 0 0 50px #f00; }
+
+  /* --- LOGS (NEW) --- */
+  #debug-log { height: 100px; background: #111; border-top: 1px solid #333; font-size: 10px; color: #0f0; overflow-y: auto; padding: 10px; font-family: monospace; white-space: pre-wrap; }
+  .log-err { color: #f55; font-weight: bold; }
+  .log-sys { color: #55f; }
+
+  /* --- CHAT --- */
+  #console { flex: 1; overflow-y: auto; padding: 15px; display: flex; flex-direction: column; gap: 10px; }
+  .msg { padding: 8px 12px; border-radius: 6px; font-size: 14px; max-width: 90%; }
+  .user { align-self: flex-end; background: #222; color: #fff; border: 1px solid #444; }
+  .ai { align-self: flex-start; background: #000; color: #ccc; border: 1px solid #333; }
+
+  /* --- CONTROLS --- */
+  #controls { padding: 10px; background: #000; display: flex; gap: 10px; border-top: 1px solid #333; }
+  #txt-input { flex: 1; padding: 12px; background: #111; color: #fff; border: 1px solid #333; border-radius: 4px; }
+  #send-btn { width: 50px; background: #222; color: cyan; border: 1px solid #333; cursor: pointer; font-size: 20px; }
+  
+  /* --- SETTINGS --- */
+  #settings-panel { display: none; position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.95); z-index: 5000; flex-direction: column; align-items: center; justify-content: center; padding: 20px; box-sizing: border-box; }
+  #settings-panel.active { display: flex !important; }
+  input, select { width: 100%; padding: 10px; margin-bottom: 10px; background: #222; color: white; border: 1px solid #444; box-sizing: border-box; }
+  #save-btn { width: 100%; padding: 15px; background: cyan; border: none; font-weight: bold; cursor: pointer; }
+  .close-x { position: absolute; top: 20px; right: 20px; color: white; font-size: 30px; cursor: pointer; }
+
+  #header-row { padding: 10px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #333; }
+</style>
+</head>
+<body>
+
+<div id="boot-screen">
+    <button id="boot-btn" onclick="bootSystem()">[ INITIALIZE HELIX ]</button>
+    <p style="color:#666; margin-top:20px;">Tap to unlock Audio & Permissions</p>
+</div>
+
+<div id="settings-panel">
+    <div class="close-x" onclick="toggleSettings()">×</div>
+    <h2 style="color:cyan;">CONFIG</h2>
+    <label>Google API Key:</label>
+    <input id="api-key" placeholder="AIza..." type="password">
+    <label>Model ID:</label>
+    <select id="model-select">
+        <option value="gemini-2.0-flash">Gemini 2.0 Flash</option>
+        <option value="gemini-2.0-flash-exp">Gemini 2.0 Flash (Exp)</option>
+        <option value="gemini-2.0-flash-lite-preview-02-05">Gemini 2.0 Flash Lite</option>
+        <option value="custom">Custom...</option>
+    </select>
+    <input id="custom-model" style="display:none;" placeholder="Enter Model ID">
+    <button id="save-btn" onclick="saveSettings()">SAVE SETTINGS</button>
+    <button onclick="testApi()" style="margin-top:10px; width:100%; padding:10px; background:#330; color:#ff0; border:1px solid #550;">TEST CONNECTION</button>
+</div>
+
+<div id="header-row">
+    <span style="font-weight:bold; color:cyan;">HELIX v45</span>
+    <button onclick="toggleSettings()" style="background:#222; color:white; border:none; padding:5px 10px;">⚙️</button>
+</div>
+
+<div id="scene">
+    <div id="core"><span>H</span></div>
+</div>
+
+<div id="console"></div>
+
+<div id="debug-log">System Ready. Waiting for boot...</div>
+
+<div id="controls">
+    <input id="txt-input" placeholder="Type here..." onkeydown="if(event.key==='Enter') sendMsg()">
+    <button id="send-btn" onclick="sendMsg()">➤</button>
+</div>
+
+<script>
+// --- LOGGING ---
+function log(msg, type='') {
+    const logBox = document.getElementById('debug-log');
+    const line = document.createElement('div');
+    if(type === 'err') line.className = 'log-err';
+    else if(type === 'sys') line.className = 'log-sys';
+    line.innerText = `> ${msg}`;
+    logBox.prepend(line);
+}
+
+// --- STATE ---
+let apiKey = localStorage.getItem("helix_key_v45") || "";
+let modelId = localStorage.getItem("helix_model_v45") || "gemini-2.0-flash";
+let audioCtx = null;
+
+// --- BOOT ---
+function bootSystem() {
+    try {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        audioCtx.resume();
+        document.getElementById('boot-screen').style.display = 'none';
+        
+        if(!apiKey || apiKey.length < 10) {
+            log("NO API KEY FOUND. Please open Settings.", "err");
+            toggleSettings();
+        } else {
+            log("System Booted.");
+            log("Active Model: " + modelId, "sys");
+        }
+    } catch(e) {
+        alert("Boot Error: " + e.message);
+    }
+}
+
+// --- SETTINGS ---
+function toggleSettings() {
+    const p = document.getElementById('settings-panel');
+    p.classList.toggle('active');
+    if(p.classList.contains('active')) {
+        document.getElementById('api-key').value = apiKey;
+        document.getElementById('model-select').value = modelId;
+    }
+}
+
+document.getElementById('model-select').addEventListener('change', (e) => {
+    if(e.target.value === 'custom') document.getElementById('custom-model').style.display = 'block';
+    else document.getElementById('custom-model').style.display = 'none';
+});
+
+function saveSettings() {
+    apiKey = document.getElementById('api-key').value.trim();
+    let m = document.getElementById('model-select').value;
+    if(m === 'custom') m = document.getElementById('custom-model').value.trim();
+    
+    if(!apiKey.startsWith("AIza")) {
+        log("Invalid Key Format (Must start with AIza)", "err");
+        return;
+    }
+    
+    modelId = m;
+    localStorage.setItem("helix_key_v45", apiKey);
+    localStorage.setItem("helix_model_v45", modelId);
+    
+    log("Settings Saved.", "sys");
+    toggleSettings();
+}
+
+async function testApi() {
+    log("Testing API connection...", "sys");
+    try {
+        let res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${modelId}:generateContent?key=${apiKey}`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ contents: [{ parts: [{ text: "Hello" }] }] })
+        });
+        
+        let data = await res.json();
+        
+        if(!res.ok) {
+            throw new Error(data.error ? data.error.message : res.statusText);
+        }
+        
+        log("✅ API TEST SUCCESS!", "sys");
+        alert("Connection Successful!");
+    } catch(e) {
+        log("❌ TEST FAILED: " + e.message, "err");
+        alert("Failed: " + e.message);
+    }
+}
+
+// --- CHAT LOGIC ---
+async function sendMsg() {
+    let txt = document.getElementById('txt-input').value.trim();
+    if(!txt) return;
+    
+    if(!apiKey) { log("Missing API Key!", "err"); toggleSettings(); return; }
+    
+    document.getElementById('txt-input').value = "";
+    addBubble(txt, 'user');
+    updateOrb('thinking');
+    log("Sending request to " + modelId + "...");
+    
+    try {
+        let res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${modelId}:generateContent?key=${apiKey}`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ 
+                contents: [{ parts: [{ text: txt }] }] 
+            })
+        });
+        
+        let data = await res.json();
+        
+        if(!res.ok) {
+            // Auto-Switch logic if 404
+            if(data.error && data.error.message.includes("not found")) {
+                log("Model not found. Trying fallback (2.0-flash-exp)...", "err");
+                modelId = "gemini-2.0-flash-exp";
+                localStorage.setItem("helix_model_v45", modelId);
+                sendMsg(); // Retry recursively
+                return;
+            }
+            throw new Error(data.error ? data.error.message : "Unknown Error");
+        }
+        
+        let reply = data.candidates[0].content.parts[0].text;
+        addBubble(reply, 'ai');
+        updateOrb('talking');
+        log("Response received.", "sys");
+        speak(reply);
+        
+    } catch(e) {
+        log("API ERROR: " + e.message, "err");
+        updateOrb('error');
+        addBubble("System Error: " + e.message, 'ai');
+    }
+}
+
+function addBubble(txt, type) {
+    let d = document.createElement('div');
+    d.className = 'msg ' + type;
+    d.innerText = txt;
+    document.getElementById('console').appendChild(d);
+    document.getElementById('console').scrollTop = 99999;
+}
+
+function updateOrb(state) {
+    let c = document.getElementById('core');
+    c.className = state;
+    setTimeout(() => { if(state === 'talking') c.className = ''; }, 2000);
+}
+
+// --- TTS ---
+function speak(txt) {
+    if(!window.speechSynthesis) return;
+    let u = new SpeechSynthesisUtterance(txt);
+    u.rate = 1.2;
+    window.speechSynthesis.speak(u);
+}
+
+</script>
+</body>
+</html>
