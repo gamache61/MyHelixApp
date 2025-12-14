@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=0">
+<title>Helix v46 (Rescue)</title>
+
+<style>
+  /* --- CRITICAL CSS --- */
+  body { background: #000; color: #fff; font-family: monospace; margin: 0; display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+  
+  /* --- ERROR BOX (Hidden unless crashed) --- */
+  #crash-report { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #200; z-index: 99999; padding: 20px; box-sizing: border-box; overflow: auto; }
+  #crash-report h1 { color: #f55; margin-top: 0; }
+  #crash-text { color: #fff; white-space: pre-wrap; font-size: 12px; border: 1px solid #f55; padding: 10px; }
+
+  /* --- NORMAL UI --- */
+  #main-ui { flex: 1; display: flex; flex-direction: column; height: 100%; }
+  
+  #scene { height: 30%; background: radial-gradient(circle, #222, #000); display: flex; justify-content: center; align-items: center; border-bottom: 1px solid #333; }
+  #core { width: 80px; height: 80px; background: #0ff; border-radius: 50%; box-shadow: 0 0 40px #0ff; transition: 0.2s; }
+  
+  #console { flex: 1; overflow-y: auto; padding: 10px; background: #111; }
+  .msg { padding: 8px 12px; margin-bottom: 8px; border-radius: 6px; max-width: 85%; word-wrap: break-word; }
+  .user { background: #333; align-self: flex-end; margin-left: auto; border: 1px solid #555; }
+  .ai { background: #000; align-self: flex-start; border: 1px solid #0ff; color: #ccc; }
+  .sys { text-align: center; color: #666; font-size: 10px; border: none; }
+
+  #controls { padding: 10px; background: #222; display: flex; gap: 10px; border-top: 1px solid #444; }
+  input { flex: 1; padding: 12px; border-radius: 4px; border: 1px solid #555; background: #000; color: #fff; }
+  button { padding: 10px 20px; background: #055; color: #0ff; border: 1px solid #0ff; border-radius: 4px; font-weight: bold; cursor: pointer; }
+
+  /* --- SETTINGS OVERLAY --- */
+  #settings { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.9); z-index: 5000; justify-content: center; align-items: center; flex-direction: column; }
+  #settings.active { display: flex; }
+  .box { background: #111; padding: 20px; border: 1px solid #444; width: 90%; max-width: 300px; text-align: center; border-radius: 8px; }
+  .box input, .box select { width: 100%; margin-bottom: 10px; box-sizing: border-box; }
+</style>
+
+<script>
+window.onerror = function(msg, url, line, col, error) {
+    document.getElementById('crash-report').style.display = 'block';
+    document.getElementById('crash-text').innerText += `\n[CRASH] ${msg}\nLine: ${line}\n${error ? error.stack : ''}`;
+    return false;
+};
+</script>
+</head>
+<body>
+
+<div id="crash-report">
+    <h1>⚠️ SYSTEM CRASH</h1>
+    <p>The app failed to load. Please copy the text below:</p>
+    <div id="crash-text"></div>
+    <button onclick="location.reload()" style="margin-top:20px; width:100%; background:#f55; color:white; border:none;">RETRY</button>
+    <button onclick="localStorage.clear(); location.reload()" style="margin-top:10px; width:100%; background:#555; color:white; border:none;">RESET MEMORY</button>
+</div>
+
+<div id="settings">
+    <div class="box">
+        <h2 style="color:#0ff; margin-top:0;">SETUP</h2>
+        <label style="display:block; text-align:left; color:#888; font-size:10px;">GOOGLE API KEY</label>
+        <input id="api-key" type="password" placeholder="Paste AIza key...">
+        
+        <label style="display:block; text-align:left; color:#888; font-size:10px; margin-top:10px;">MODEL</label>
+        <select id="model-select" style="padding:10px; background:#000; color:#fff; border:1px solid #555;">
+            <option value="gemini-2.0-flash-exp">Gemini 2.0 Flash Exp (Standard)</option>
+            <option value="gemini-1.5-flash">Gemini 1.5 Flash (Backup)</option>
+        </select>
+
+        <button onclick="saveSettings()" style="width:100%; margin-top:15px;">BOOT SYSTEM</button>
+    </div>
+</div>
+
+<div id="main-ui">
+    <div id="scene">
+        <div id="core"></div>
+        <div style="position:absolute; top:10px; right:10px; color:#0ff; font-size:10px;">v46 RESCUE</div>
+        <div style="position:absolute; top:10px; left:10px; cursor:pointer;" onclick="openSettings()">⚙️</div>
+    </div>
+
+    <div id="console"></div>
+
+    <div id="controls">
+        <input id="txt-input" placeholder="Message..." onkeydown="if(event.key==='Enter') send()">
+        <button onclick="send()">SEND</button>
+    </div>
+</div>
+
+<script>
+// --- STATE ---
+let apiKey = localStorage.getItem("helix_key_v46") || "";
+let model = localStorage.getItem("helix_model_v46") || "gemini-2.0-flash-exp";
+let history = [];
+
+// --- BOOT ---
+window.onload = () => {
+    try {
+        // Test local storage access
+        localStorage.setItem("test", "1");
+        localStorage.removeItem("test");
+        
+        if(!apiKey || apiKey.length < 10) {
+            openSettings();
+        } else {
+            addMsg("sys", "System Online. Model: " + model);
+        }
+    } catch(e) {
+        throw new Error("Storage Access Failed: " + e.message);
+    }
+};
+
+// --- CORE FUNCTIONS ---
+function openSettings() {
+    document.getElementById('settings').classList.add('active');
+    document.getElementById('api-key').value = apiKey;
+    document.getElementById('model-select').value = model;
+}
+
+function saveSettings() {
+    let k = document.getElementById('api-key').value.trim();
+    let m = document.getElementById('model-select').value;
+    
+    if(!k.startsWith("AIza")) {
+        alert("Invalid Key. Must start with AIza");
+        return;
+    }
+    
+    apiKey = k;
+    model = m;
+    localStorage.setItem("helix_key_v46", apiKey);
+    localStorage.setItem("helix_model_v46", model);
+    
+    document.getElementById('settings').classList.remove('active');
+    addMsg("sys", "Rebooting with new settings...");
+    setTimeout(() => location.reload(), 500);
+}
+
+function addMsg(role, text) {
+    let div = document.createElement('div');
+    div.className = "msg " + role;
+    div.innerText = text;
+    let c = document.getElementById('console');
+    c.appendChild(div);
+    c.scrollTop = c.scrollHeight;
+}
+
+function updateOrb(state) {
+    let c = document.getElementById('core');
+    if(state === 'thinking') { c.style.background = '#fa0'; c.style.boxShadow = '0 0 50px #fa0'; c.style.transform = 'scale(0.8)'; }
+    else if(state === 'error') { c.style.background = '#f00'; c.style.boxShadow = '0 0 50px #f00'; }
+    else { c.style.background = '#0ff'; c.style.boxShadow = '0 0 40px #0ff'; c.style.transform = 'scale(1)'; }
+}
+
+// --- API LOGIC ---
+async function send() {
+    let input = document.getElementById('txt-input');
+    let txt = input.value.trim();
+    if(!txt) return;
+    
+    if(!apiKey) { openSettings(); return; }
+    
+    input.value = "";
+    addMsg("user", txt);
+    updateOrb("thinking");
+    
+    // Prepare Payload
+    let payload = {
+        contents: [{ parts: [{ text: txt }] }]
+    };
+    
+    // Add history if simple enough
+    if(history.length > 0) {
+        // Only keep last 2 turns to prevent 400 errors from complex history
+        let context = history.slice(-4);
+        payload.contents = [...context, ...payload.contents];
+    }
+
+    try {
+        let url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+        
+        let req = await fetch(url, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(payload)
+        });
+        
+        let data = await req.json();
+        
+        if(!req.ok) {
+            let errMsg = data.error ? data.error.message : "Unknown Error";
+            throw new Error(errMsg);
+        }
+        
+        let reply = data.candidates[0].content.parts[0].text;
+        
+        // Save simple history
+        history.push({ role: "user", parts: [{ text: txt }] });
+        history.push({ role: "model", parts: [{ text: reply }] });
+        
+        addMsg("ai", reply);
+        updateOrb("idle");
+        
+    } catch(e) {
+        updateOrb("error");
+        addMsg("sys", "ERROR: " + e.message);
+        
+        // Auto-Fix 404
+        if(e.message.includes("not found") || e.message.includes("404")) {
+            addMsg("sys", "⚠️ Model not found. Switching to 1.5 Flash...");
+            model = "gemini-1.5-flash";
+            localStorage.setItem("helix_model_v46", model);
+        }
+    }
+}
+</script>
+</body>
+</html>
