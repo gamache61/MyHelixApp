@@ -1,0 +1,368 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=0, viewport-fit=cover">
+<title>Helix v50 (Gemini 2.5/3.0)</title>
+<link rel="manifest" href="manifest.json">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#000000">
+<style>
+  body { background: #000; color: #fff; font-family: -apple-system, BlinkMacSystemFont, sans-serif; height: 100dvh; margin: 0; display: flex; flex-direction: column; overflow: hidden; }
+  #scene { height: 25%; min-height: 140px; display: flex; justify-content: center; align-items: center; background: radial-gradient(circle at center, #1a1a1a 0%, #000 100%); border-bottom: 1px solid #333; position: relative; }
+  #core { width: 90px; height: 90px; background: radial-gradient(circle at 30% 30%, #fff, #0ff, #001); border-radius: 50%; box-shadow: 0 0 30px cyan; display: flex; justify-content: center; align-items: center; animation: float 6s ease-in-out infinite; transition: 0.3s; z-index: 2; }
+  #core span { font-size: 10px; font-weight: 900; letter-spacing: 1px; color: rgba(0,0,0,0.6); font-family: monospace; pointer-events: none; }
+  #version-tag { position: absolute; top: 10px; right: 10px; color: #0ff; font-family: monospace; font-size: 10px; background: rgba(0, 50, 50, 0.5); padding: 4px; border: 1px solid #0ff; z-index: 5; }
+  #core.listening { background: radial-gradient(circle at 30% 30%, #fff, #5f5, #010) !important; box-shadow: 0 0 60px lime !important; transform: scale(1.15); }
+  #core.thinking { background: radial-gradient(circle at 30% 30%, #fff, #fb0, #420) !important; box-shadow: 0 0 50px orange !important; animation: pulseFast 0.5s alternate infinite !important; transform: scale(0.95); }
+  #core.talking { background: radial-gradient(circle at 30% 30%, #fff, #a0f, #205) !important; box-shadow: 0 0 60px #a0f !important; animation: pulse 0.3s alternate infinite !important; }
+  @keyframes float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-10px); } }
+  @keyframes pulse { 0% { transform: scale(1); } 100% { transform: scale(1.08); } }
+  @keyframes pulseFast { 0% { transform: scale(0.95); opacity: 0.8; } 100% { transform: scale(1.0); opacity: 1; } }
+  #camera-container { display: none; position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: #000; z-index: 10; flex-direction: column; justify-content: center; align-items: center; }
+  video { width: 100%; height: 100%; object-fit: cover; }
+  #cam-overlay-text { position: absolute; bottom: 30px; width: 100%; text-align: center; color: cyan; font-family: monospace; background: rgba(0,0,0,0.5); padding: 5px; }
+  #ui-layer { flex: 1; display: flex; flex-direction: column; padding: 10px 10px 0 10px; background: #0a0a0a; gap: 10px; overflow: hidden; position: relative; }
+  #header-row { display: flex; justify-content: space-between; align-items: center; min-height: 30px; gap: 8px; }
+  .switch { position: relative; display: inline-block; width: 40px; height: 20px; }
+  .switch input { opacity: 0; width: 0; height: 0; }
+  .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #333; transition: .4s; border-radius: 34px; }
+  .slider:before { position: absolute; content: ""; height: 14px; width: 14px; left: 3px; bottom: 3px; background-color: white; transition: .4s; border-radius: 50%; }
+  input:checked + .slider { background-color: #90f; }
+  input:checked + .slider:before { transform: translateX(20px); }
+  #mode-label { font-size: 10px; font-weight: bold; color: #888; letter-spacing: 1px; }
+  #model-badge { background: #112; color: #aaf; border: 1px solid #336; padding: 4px 8px; border-radius: 6px; font-size: 10px; font-weight: bold; font-family: monospace; flex-grow: 1; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 120px; }
+  .icon-btn { background: none; border: none; font-size: 18px; cursor: pointer; opacity: 0.7; padding: 5px; }
+  #console { flex-grow: 1; min-height: 0; overflow-y: auto; padding: 10px; border: 1px solid #222; border-radius: 8px; background: #000; display: flex; flex-direction: column; gap: 10px; }
+  .msg { padding: 10px; border-radius: 8px; font-size: 15px; max-width: 90%; line-height: 1.4; word-wrap: break-word; }
+  .user { align-self: flex-end; background: #222; color: #fff; }
+  .ai { align-self: flex-start; color: #ccc; border: 1px solid #333; width: 100%; box-sizing: border-box; }
+  .code-block { background: #111; padding: 10px; margin-top:5px; border-radius:6px; font-family:monospace; font-size:12px; overflow-x:auto; border:1px solid #333; }
+  #settings-panel { display: none; position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: #000; z-index: 9999; flex-direction: column; align-items: center; justify-content: flex-start; padding: 30px; box-sizing: border-box; overflow-y: auto; }
+  #settings-panel.active { display: flex !important; }
+  #settings-panel h2 { color: cyan; font-family: monospace; margin-bottom: 20px; font-size: 24px; letter-spacing: 2px; }
+  .setting-label { color:#888; font-size:12px; margin-bottom:5px; margin-top:15px; text-align:left; width:100%; font-weight:bold; }
+  #key-input, #eleven-key-input, #custom-model-input { width: 100%; padding: 15px; border-radius: 10px; border: 1px solid #444; background: #111; color: white; margin-bottom: 15px; font-family: monospace; font-size: 14px; text-align: center; box-sizing: border-box; }
+  #model-select { width: 100%; padding: 15px; border-radius: 10px; border: 1px solid #444; background: #111; color: white; margin-bottom: 10px; font-family: monospace; font-size: 14px; -webkit-appearance: none; appearance: none; text-align: center; cursor: pointer; box-sizing: border-box; }
+  #custom-model-container { display: none; width: 100%; }
+  #save-key-btn { width: 100%; padding: 20px; background: cyan; color: #000; border: none; border-radius: 10px; font-weight: bold; cursor: pointer; font-size: 18px; margin-top: 10px; }
+  #close-settings { position: absolute; top: 20px; right: 20px; background: none; border: none; color: #fff; font-size: 30px; cursor: pointer; }
+  #controls { display: flex; flex-direction: column; gap: 8px; flex-shrink: 0; padding-bottom: calc(10px + env(safe-area-inset-bottom)); }
+  #input-row { display: flex; gap: 8px; align-items: center; } 
+  #txt-input { flex-grow: 1; flex-shrink: 1; padding: 10px 8px; height: 20px; box-sizing: content-box; border-radius: 12px; border: 1px solid #333; background: #111; color: white; font-size: 16px; outline: none; }
+  #action-row { display: flex; gap: 8px; }
+  .action-btn, #mic-btn, #send-btn { width: 44px; height: 44px; background: #222; color: #aaa; border: 1px solid #333; border-radius: 12px; font-size: 18px; cursor: pointer; display: flex; align-items: center; justify-content: center; padding: 0; flex-shrink: 0; }
+  #send-btn { color: cyan; }
+  #mic-btn.active { background: #060; border-color: lime; color: #fff; box-shadow: 0 0 15px #060; }
+  #action-row button { flex-grow: 1; width: auto; background: #222; border: 1px solid #333; color: #aaa; font-size: 18px; }
+  #image-preview { display: none; width: 60px; height: 60px; border-radius: 8px; border: 2px solid cyan; background-size: cover; margin-bottom: 5px; }
+  #file-input { display: none; }
+</style>
+</head>
+<body>
+
+<div id="settings-panel">
+    <button id="close-settings" onclick="toggleSettings()">&times;</button>
+    <h2>HELIX CONFIG</h2>
+    
+    <div class="setting-label">AI MODEL SELECTOR</div>
+    <select id="model-select" onchange="checkCustomModel()">
+        <option value="gemini-2.5-flash" selected>Gemini 2.5 Flash (Standard)</option>
+        <option value="gemini-2.5-pro">Gemini 2.5 Pro (Reasoning)</option>
+        <option value="gemini-3.0-flash">Gemini 3.0 Flash (New)</option>
+        <option value="custom">-- Custom Model ID --</option>
+    </select>
+    
+    <div id="custom-model-container">
+        <input type="text" id="custom-model-input" placeholder="e.g. gemini-2.0-flash">
+    </div>
+    
+    <div class="setting-label">GOOGLE API KEY</div>
+    <input type="text" id="key-input" placeholder="AIza... (SAVED LOCALLY)">
+    
+    <div class="setting-label">ELEVENLABS API KEY (Optional)</div>
+    <input type="text" id="eleven-key-input" placeholder="xi-... (SAVED LOCALLY)">
+    
+    <button id="save-key-btn" onclick="saveSettings()">SAVE & RESTART</button>
+</div>
+
+<div id="scene">
+    <div id="version-tag">v50.0 (Gemini 2.5)</div>
+    <div id="core"><span id="orb-text">HELIX</span></div>
+    <div id="camera-container" onclick="snapPhoto()">
+        <video id="cam-feed" autoplay playsinline></video>
+        <div id="cam-overlay-text">TAP TO CAPTURE</div>
+    </div>
+</div>
+
+<div id="ui-layer">
+  <div id="header-row">
+    <div style="display:flex; align-items:center; gap:5px;">
+        <label class="switch">
+          <input type="checkbox" id="dev-toggle" onchange="toggleDevMode()">
+          <span class="slider"></span>
+        </label>
+        <span id="mode-label">CODE</span>
+    </div>
+    <div id="model-badge">LOADING...</div>
+    <button class="icon-btn" onclick="toggleSettings()">&#9881;</button>
+    <button class="icon-btn" onclick="clearConversation()">&#128465;</button>
+  </div>
+
+  <div id="console"></div>
+    
+  <div id="controls">
+    <div id="image-preview" onclick="clearImage()"></div>
+    <input type="file" id="file-input" accept="image/*" onchange="handleImageSelect(event)">
+    
+    <div id="input-row">
+        <input id="txt-input" placeholder="Message..." onkeydown="if(event.key==='Enter') sendText()">
+        <button id="mic-btn" onclick="handleMicClick()">🎤</button>
+        <button id="send-btn" onclick="sendText()">▶</button>
+    </div>
+
+    <div id="action-row">
+        <button onclick="startCamera()">📷 Camera</button>
+        <button onclick="document.getElementById('file-input').click()">🖼 Gallery</button>
+    </div>
+  </div>
+</div>
+
+<canvas id="cam-canvas" style="display:none;"></canvas>
+
+<script>
+let elevenKey = localStorage.getItem("helix_eleven_key") || ""; 
+let googleKey = localStorage.getItem('helix_google_key_v47') || "";
+let currentModel = localStorage.getItem('helix_model_v47') || "gemini-2.5-flash"; 
+let history = [];
+let recognition = null;
+let synth = window.speechSynthesis;
+let conversationActive = false;
+let isSpeaking = false;
+let isDevMode = false;
+let currentImage = null;
+let currentMimeType = null;
+let videoStream = null;
+let audioContext = null;
+
+window.onload = () => {
+    loadHistory();
+    checkKeyStatus();
+    updateModelBadge();
+    document.body.addEventListener('click', unlockAudioEngine, { once: true });
+};
+
+function updateModelBadge() {
+    let label = currentModel.replace("gemini-", "").replace("-exp", "").toUpperCase();
+    if(label.length > 15) label = "CUSTOM";
+    document.getElementById('model-badge').innerText = label;
+    const select = document.getElementById('model-select');
+    const options = Array.from(select.options).map(o => o.value);
+    if (options.includes(currentModel)) {
+        select.value = currentModel;
+        document.getElementById('custom-model-container').style.display = 'none';
+    } else {
+        select.value = "custom";
+        document.getElementById('custom-model-container').style.display = 'block';
+        document.getElementById('custom-model-input').value = currentModel;
+    }
+}
+
+function checkKeyStatus() {
+    const panel = document.getElementById('settings-panel');
+    if (!googleKey || googleKey.length < 10) {
+        panel.classList.add('active');
+    } else {
+        panel.classList.remove('active');
+        addMessage('system', "System Online. Helix v50.", false); 
+    }
+}
+
+function toggleSettings() {
+    const panel = document.getElementById('settings-panel');
+    panel.classList.toggle('active');
+}
+
+function checkCustomModel() {
+    const select = document.getElementById('model-select');
+    document.getElementById('custom-model-container').style.display = (select.value === 'custom') ? 'block' : 'none';
+}
+
+function saveSettings() {
+    const googleKeyInput = document.getElementById('key-input');
+    const elevenKeyInput = document.getElementById('eleven-key-input');
+    const modelSelect = document.getElementById('model-select');
+    const customInput = document.getElementById('custom-model-input');
+    
+    const newGoogleKey = googleKeyInput.value.trim();
+    const newElevenKey = elevenKeyInput.value.trim();
+    let newModel = modelSelect.value;
+    
+    if (newModel === 'custom') newModel = customInput.value.trim();
+    
+    if (newGoogleKey.length > 5) {
+        googleKey = newGoogleKey;
+        localStorage.setItem('helix_google_key_v47', googleKey);
+    }
+    
+    if (newElevenKey.length > 5) {
+        elevenKey = newElevenKey;
+        localStorage.setItem('helix_eleven_key', elevenKey);
+    }
+    
+    if(newModel.length > 0) {
+        currentModel = newModel;
+        localStorage.setItem('helix_model_v47', currentModel);
+    }
+    
+    document.getElementById('settings-panel').classList.remove('active');
+    updateModelBadge();
+    addMessage('system', `Saved. Model: ${currentModel}`, false);
+}
+
+function toggleDevMode() {
+    isDevMode = document.getElementById('dev-toggle').checked;
+    document.getElementById('mode-label').style.color = isDevMode ? "#a0f" : "#888";
+    addMessage("system", isDevMode ? "Dev Mode Active." : "Standard Mode.", false);
+}
+
+function updateOrb(state, text) {
+    const orb = document.getElementById('core');
+    const label = document.getElementById('orb-text');
+    orb.className = '';
+    if (state) orb.classList.add(state);
+    label.innerText = text;
+}
+
+function unlockAudioEngine() {
+    if (!audioContext) audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    if (audioContext.state === 'suspended') audioContext.resume();
+    let u = new SpeechSynthesisUtterance(""); synth.speak(u); 
+}
+
+async function speak(text) {
+    let cleanText = text.replace(/```[\s\S]*?```/g, "Code block provided.").replace(/[*#]/g, '').slice(0, 450); 
+    if(!cleanText) return;
+    isSpeaking = true;
+    updateOrb('talking', 'SPEAKING');
+    if(recognition) recognition.stop();
+
+    if (elevenKey.length > 10) {
+        try {
+            const response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/21m00Tcm4TlvDq8ikWAM`, {
+                method: "POST",
+                headers: { "xi-api-key": elevenKey, "Content-Type": "application/json" },
+                body: JSON.stringify({ text: cleanText, model_id: "eleven_turbo_v2_5" })
+            });
+            if(response.ok) {
+                const audio = new Audio(URL.createObjectURL(await response.blob()));
+                audio.onended = () => { isSpeaking = false; updateOrb('', 'HELIX'); if(conversationActive) startListening(); };
+                audio.play();
+                return;
+            }
+        } catch (e) {}
+    }
+    
+    synth.cancel();
+    let u = new SpeechSynthesisUtterance(cleanText);
+    u.rate = 1.1; 
+    u.onend = () => { isSpeaking = false; updateOrb('', 'HELIX'); if(conversationActive) startListening(); };
+    synth.speak(u);
+}
+
+if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    recognition = new SpeechRecognition();
+    recognition.continuous = false;
+    recognition.lang = 'en-US';
+    recognition.onstart = () => { updateOrb('listening', 'LISTENING'); document.getElementById('mic-btn').classList.add('active'); };
+    recognition.onend = () => { if (!isSpeaking) { document.getElementById('mic-btn').classList.remove('active'); if(!conversationActive) updateOrb('', 'HELIX'); }};
+    recognition.onresult = (event) => { const t = event.results[0][0].transcript; if(t) askGemini(t); };
+}
+
+function startListening() { if (!isSpeaking) try { recognition.start(); } catch(e) {} }
+function handleMicClick() {
+    unlockAudioEngine();
+    if (conversationActive) { conversationActive = false; recognition.stop(); synth.cancel(); isSpeaking = false; } 
+    else { conversationActive = true; startListening(); }
+}
+
+function sendText() {
+    unlockAudioEngine();
+    let input = document.getElementById('txt-input');
+    let text = input.value.trim();
+    if (text || currentImage) { input.value = ""; input.blur(); conversationActive = false; if(recognition) recognition.stop(); askGemini(text); }
+}
+
+async function askGemini(txt) {
+    if (!googleKey || googleKey.length < 10) { addMessage('system', "❌ Key missing.", false); toggleSettings(); return; }
+
+    let displayTxt = txt || "[Image Sent]";
+    addMessage('user', displayTxt, true);
+    updateOrb('thinking', 'THINKING');
+
+    let instruction = isDevMode ? "You are Helix, expert coder." : "You are Helix. Concise.";
+    let contents = history.slice(-6).map(h => ({ role: h.role, parts: [{ text: h.text }] }));
+    
+    let userParts = [];
+    if (txt) userParts.push({ text: txt });
+    if (currentImage) userParts.push({ inline_data: { mime_type: currentMimeType, data: currentImage } });
+    contents.push({ role: 'user', parts: userParts });
+
+    if(currentImage) clearImage();
+
+    try {
+        let req = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${currentModel}:generateContent?key=${googleKey}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ 
+                contents: contents, 
+                system_instruction: { parts: [{ text: instruction }] },
+                safety_settings: [
+                    { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_NONE" },
+                    { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_NONE" },
+                    { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_NONE" },
+                    { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_NONE" }
+                ]
+            })
+        });
+
+        if (!req.ok) throw new Error(`API Error: ${req.status}`);
+        
+        let res = await req.json();
+        let ans = res.candidates[0].content.parts[0].text;
+        
+        history.push({role:'user', text:txt || "[Image]"});
+        history.push({role:'model', text:ans});
+        localStorage.setItem('helix_history_v47', JSON.stringify(history.slice(-20)));
+
+        addMessage('model', ans, false);
+        speak(ans);
+    } catch(e) {
+        console.error(e);
+        let err = e.message;
+        if(err.includes("Failed to fetch")) err = "Connection Blocked. Check Internet or API Key permissions.";
+        addMessage('system', `❌ ${err}`, false);
+        updateOrb('error', 'ERROR');
+    }
+}
+
+function loadHistory() { try { const s = localStorage.getItem('helix_history_v47'); if(s) { history = JSON.parse(s); history.forEach(m => addMessage(m.role, m.text, false)); } } catch(e) {} }
+function clearConversation() { if(confirm("Clear?")) { history = []; localStorage.removeItem('helix_history_v47'); document.getElementById('console').innerHTML = ''; } }
+
+function addMessage(role, text, skipScroll) {
+    const d = document.getElementById('console');
+    const m = document.createElement('div');
+    m.className = `msg ${role === 'model' ? 'ai' : role}`;
+    m.innerHTML = text.replace(/</g, "&lt;").replace(/\*\*(.*?)\*\*/g, '<b>$1</b>').replace(/```(\w*)\n([\s\S]*?)```/g, '<div class="code-block">$2</div>');
+    d.appendChild(m);
+    if (!skipScroll) setTimeout(() => d.scrollTop = d.scrollHeight, 10);
+}
+
+function handleImageSelect(e) { const f = e.target.files[0]; if(f) { const r = new FileReader(); r.onload = (ev) => { currentImage = ev.target.result.split(',')[1]; currentMimeType = f.type; document.getElementById('image-preview').style.backgroundImage = `url(${ev.target.result})`; document.getElementById('image-preview').style.display = 'block'; }; r.readAsDataURL(f); } }
+function clearImage() { currentImage = null; document.getElementById('image-preview').style.display = 'none'; }
+function startCamera() { navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } }).then(s => { videoStream = s; document.getElementById('cam-feed').srcObject = s; document.getElementById('camera-container').style.display = 'flex'; }).catch(()=>alert("Cam Error")); }
+function snapPhoto() { const v = document.getElementById('cam-feed'); const c = document.getElementById('cam-canvas'); c.width = v.videoWidth; c.height = v.videoHeight; c.getContext('2d').drawImage(v,0,0); videoStream.getTracks().forEach(t=>t.stop()); document.getElementById('camera-container').style.display = 'none'; const d = c.toDataURL('image/jpeg', 0.8); currentImage = d.split(',')[1]; currentMimeType = 'image/jpeg'; document.getElementById('image-preview').style.backgroundImage = `url(${d})`; document.getElementById('image-preview').style.display = 'block'; }
+</script>
+</body>
+</html>
