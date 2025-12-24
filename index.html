@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=0, viewport-fit=cover">
+<title>Helix v47.2 - Persistent Keys</title>
+
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' fill='black'/><circle cx='50' cy='50' r='40' stroke='cyan' stroke-width='5' fill='none'/><text x='50' y='65' font-family='sans-serif' font-size='50' fill='cyan' text-anchor='middle'>H</text></svg>">
+
+<link rel="manifest" href="manifest.json">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#000000">
+
+<style>
+  body { background: #000; color: #fff; font-family: -apple-system, BlinkMacSystemFont, sans-serif; height: 100dvh; margin: 0; display: flex; flex-direction: column; overflow: hidden; }
+  #scene { height: 25%; min-height: 140px; display: flex; justify-content: center; align-items: center; background: radial-gradient(circle at center, #1a1a1a 0%, #000 100%); border-bottom: 1px solid #333; position: relative; }
+  #core { width: 90px; height: 90px; background: radial-gradient(circle at 30% 30%, #fff, #0ff, #001); border-radius: 50%; box-shadow: 0 0 30px cyan; display: flex; justify-content: center; align-items: center; animation: float 6s ease-in-out infinite; transition: 0.3s; z-index: 2; }
+  #core span { font-size: 10px; font-weight: 900; letter-spacing: 1px; color: rgba(0,0,0,0.6); font-family: monospace; pointer-events: none; }
+  #version-tag { position: absolute; top: 10px; right: 10px; color: #0ff; font-family: monospace; font-size: 10px; background: rgba(0, 50, 50, 0.5); padding: 4px; border: 1px solid #0ff; z-index: 5; }
+  #core.listening { background: radial-gradient(circle at 30% 30%, #fff, #5f5, #010) !important; box-shadow: 0 0 60px lime !important; transform: scale(1.15); }
+  #core.thinking { background: radial-gradient(circle at 30% 30%, #fff, #fb0, #420) !important; box-shadow: 0 0 50px orange !important; animation: pulseFast 0.5s alternate infinite !important; transform: scale(0.95); }
+  #core.talking { background: radial-gradient(circle at 30% 30%, #fff, #a0f, #205) !important; box-shadow: 0 0 60px #a0f !important; animation: pulse 0.3s alternate infinite !important; }
+  @keyframes float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-10px); } }
+  @keyframes pulse { 0% { transform: scale(1); } 100% { transform: scale(1.08); } }
+  @keyframes pulseFast { 0% { transform: scale(0.95); opacity: 0.8; } 100% { transform: scale(1.0); opacity: 1; } }
+  #camera-container { display: none; position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: #000; z-index: 10; flex-direction: column; justify-content: center; align-items: center; }
+  video { width: 100%; height: 100%; object-fit: cover; }
+  #cam-overlay-text { position: absolute; bottom: 30px; width: 100%; text-align: center; color: cyan; font-family: monospace; background: rgba(0,0,0,0.5); padding: 5px; }
+  #ui-layer { flex: 1; display: flex; flex-direction: column; padding: 10px 10px 0 10px; background: #0a0a0a; gap: 10px; overflow: hidden; position: relative; }
+  #header-row { display: flex; justify-content: space-between; align-items: center; min-height: 30px; gap: 8px; }
+  .switch { position: relative; display: inline-block; width: 40px; height: 20px; }
+  .switch input { opacity: 0; width: 0; height: 0; }
+  .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #333; transition: .4s; border-radius: 34px; }
+  .slider:before { position: absolute; content: ""; height: 14px; width: 14px; left: 3px; bottom: 3px; background-color: white; transition: .4s; border-radius: 50%; }
+  input:checked + .slider { background-color: #90f; }
+  input:checked + .slider:before { transform: translateX(20px); }
+  #mode-label { font-size: 10px; font-weight: bold; color: #888; letter-spacing: 1px; }
+  #model-badge { background: #112; color: #aaf; border: 1px solid #336; padding: 4px 8px; border-radius: 6px; font-size: 10px; font-weight: bold; font-family: monospace; flex-grow: 1; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 120px; }
+  .icon-btn { background: none; border: none; font-size: 18px; cursor: pointer; opacity: 0.7; padding: 5px; }
+  #console { flex-grow: 1; min-height: 0; overflow-y: auto; padding: 10px; border: 1px solid #222; border-radius: 8px; background: #000; display: flex; flex-direction: column; gap: 10px; }
+  .msg { padding: 10px; border-radius: 8px; font-size: 15px; max-width: 90%; line-height: 1.4; word-wrap: break-word; }
+  .user { align-self: flex-end; background: #222; color: #fff; }
+  .ai { align-self: flex-start; color: #ccc; border: 1px solid #333; width: 100%; box-sizing: border-box; }
+  .code-block { background: #111; padding: 10px; margin-top:5px; border-radius:6px; font-family:monospace; font-size:12px; overflow-x:auto; border:1px solid #333; }
+  #settings-panel { display: none; position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: #000; z-index: 9999; flex-direction: column; align-items: center; justify-content: flex-start; padding: 30px; box-sizing: border-box; overflow-y: auto; }
+  #settings-panel.active { display: flex !important; }
+  #settings-panel h2 { color: cyan; font-family: monospace; margin-bottom: 20px; font-size: 24px; letter-spacing: 2px; }
+  .setting-label { color:#888; font-size:12px; margin-bottom:5px; margin-top:15px; text-align:left; width:100%; font-weight:bold; }
+  .key-input-field { width: 100%; padding: 15px; border-radius: 10px; border: 1px solid #444; background: #111; color: white; margin-bottom: 15px; font-family: monospace; font-size: 14px; text-align: center; box-sizing: border-box; }
+  #model-select { width: 100%; padding: 15px; border-radius: 10px; border: 1px solid #444; background: #111; color: white; margin-bottom: 10px; font-family: monospace; font-size: 14px; -webkit-appearance: none; appearance: none; text-align: center; cursor: pointer; box-sizing: border-box; }
+  #custom-model-container { display: none; width: 100%; }
+  #save-key-btn { width: 100%; padding: 20px; background: cyan; color: #000; border: none; border-radius: 10px; font-weight: bold; cursor: pointer; font-size: 18px; margin-top: 10px; }
+  #close-settings { position: absolute; top: 20px; right: 20px; background: none; border: none; color: #fff; font-size: 30px; cursor: pointer; }
+  #controls { display: flex; flex-direction: column; gap: 8px; flex-shrink: 0; padding-bottom: calc(10px + env(safe-area-inset-bottom)); }
+  #input-row { display: flex; gap: 8px; align-items: center; } 
+  #txt-input { flex-grow: 1; flex-shrink: 1; padding: 10px 8px; height: 20px; box-sizing: content-box; border-radius: 12px; border: 1px solid #333; background: #111; color: white; font-size: 16px; outline: none; }
+  #action-row { display: flex; gap: 8px; }
+  .action-btn, #mic-btn, #send-btn { width: 44px; height: 44px; background: #222; color: #aaa; border: 1px solid #333; border-radius: 12px; font-size: 18px; cursor: pointer; display: flex; align-items: center; justify-content: center; padding: 0; flex-shrink: 0; }
+  #send-btn { color: cyan; }
+  #mic-btn.active { background: #060; border-color: lime; color: #fff; box-shadow: 0 0 15px #060; }
+  #action-row button { flex-grow: 1; width: auto; background: #222; border: 1px solid #333; color: #aaa; font-size: 18px; }
+  #image-preview { display: none; width: 60px; height: 60px; border-radius: 8px; border: 2px solid cyan; background-size: cover; margin-bottom: 5px; }
+  #file-input { display: none; }
+</style>
+</head>
+<body>
+
+<div id="settings-panel">
+    <button id="close-settings" onclick="toggleSettings()">&times;</button>
+    <h2>HELIX CONFIG</h2>
+    
+    <div class="setting-label">AI MODEL SELECTOR</div>
+    <select id="model-select" onchange="checkCustomModel()">
+        <optgroup label="OpenAI Models">
+            <option value="gpt-4o-mini" selected>GPT-4o mini (Budget)</option>
+            <option value="gpt-4o">GPT-4o (Best)</option>
+        </optgroup>
+        <optgroup label="Gemini Models">
+            <option value="gemini-1.5-flash">Gemini 1.5 Flash</option>
+            <option value="gemini-1.5-pro">Gemini 1.5 Pro</option>
+        </optgroup>
+        <option value="custom">-- Custom Model ID --</option>
+    </select>
+    
+    <div id="custom-model-container">
+        <input type="text" id="custom-model-input" class="key-input-field" placeholder="e.g. gpt-4o-20251120">
+    </div>
+    
+    <div class="setting-label">GOOGLE API KEY (Gemini)</div>
+    <input type="text" id="key-input" class="key-input-field" placeholder="AIza... (Saved Locally)">
+    
+    <div class="setting-label">OPENAI API KEY (GPT)</div>
+    <input type="text" id="openai-key-input" class="key-input-field" placeholder="sk-proj-... (Saved Locally)">
+
+    <div class="setting-label">ELEVENLABS API KEY (Voice)</div>
+    <input type="text" id="eleven-key-input" class="key-input-field" placeholder="Enter ElevenLabs Key...">
+    
+    <button id="save-key-btn" onclick="saveSettings()">SAVE & START SESSION</button>
+</div>
+
+<div id="scene">
+    <div id="version-tag">v47.2 Hybrid</div>
+    <div id="core"><span id="orb-text">HELIX</span></div>
+    <div id="camera-container" onclick="snapPhoto()">
+        <video id="cam-feed" autoplay playsinline></video>
+        <div id="cam-overlay-text">TAP TO CAPTURE</div>
+    </div>
+</div>
+
+<div id="ui-layer">
+  <div id="header-row">
+    <div style="display:flex; align-items:center; gap:5px;">
+        <label class="switch">
+          <input type="checkbox" id="dev-toggle" onchange="toggleDevMode()">
+          <span class="slider"></span>
+        </label>
+        <span id="mode-label">CODE</span>
+    </div>
+    <div id="model-badge">LOADING...</div>
+    <button class="icon-btn" onclick="toggleSettings()">&#9881;</button>
+    <button class="icon-btn" onclick="clearConversation()">&#128465;</button>
+  </div>
+
+  <div id="console"></div>
+    
+  <div id="controls">
+    <div id="image-preview" onclick="clearImage()"></div>
+    <input type="file" id="file-input" accept="image/*" onchange="handleImageSelect(event)">
+    
+    <div id="input-row">
+        <input id="txt-input" placeholder="Message..." onkeydown="if(event.key==='Enter') sendText()">
+        <button id="mic-btn" onclick="handleMicClick()">🎤</button>
+        <button id="send-btn" onclick="sendText()">▶</button>
+    </div>
+
+    <div id="action-row">
+        <button onclick="startCamera()">📷 Camera</button>
+        <button onclick="document.getElementById('file-input').click()">🖼 Gallery</button>
+    </div>
+  </div>
+</div>
+
+<canvas id="cam-canvas" style="display:none;"></canvas>
+
+<script>
+// --- Global Variables ---
+let elevenKey = localStorage.getItem("helix_eleven_key") || ""; 
+let googleKey = localStorage.getItem('helix_google_key_v47') || "";
+let openaiKey = localStorage.getItem('helix_openai_key_v47') || "";
+let currentModel = localStorage.getItem('helix_model_v47') || "gpt-4o-mini"; 
+
+let history = [];
+let recognition = null;
+let synth = window.speechSynthesis;
+let conversationActive = false;
+let isSpeaking = false;
+let isDevMode = false;
+let currentImage = null;
+let currentMimeType = null;
+let videoStream = null;
+let audioContext = null;
+
+window.onload = () => {
+    loadHistory();
+    checkKeyStatus();
+    updateModelBadge();
+    document.body.addEventListener('click', unlockAudioEngine, { once: true });
+};
+
+function updateModelBadge() {
+    let label = currentModel.replace("gemini-", "").replace("gpt-", "").toUpperCase();
+    document.getElementById('model-badge').innerText = label;
+    
+    const select = document.getElementById('model-select');
+    const options = Array.from(select.options).map(o => o.value);
+    
+    if (options.includes(currentModel)) {
+        select.value = currentModel;
+        document.getElementById('custom-model-container').style.display = 'none';
+    } else {
+        select.value = "custom";
+        document.getElementById('custom-model-container').style.display = 'block';
+        document.getElementById('custom-model-input').value = currentModel;
+    }
+}
+
+function checkKeyStatus() {
+    const panel = document.getElementById('settings-panel');
+    const hasAIKey = (googleKey && googleKey.length > 10) || (openaiKey && openaiKey.length > 10);
+    
+    if (!hasAIKey) {
+        panel.classList.add('active');
+    } else {
+        panel.classList.remove('active');
+        addMessage('system', "System Online. Persistent Keys Loaded.", false); 
+    }
+}
+
+function toggleSettings() {
+    const panel = document.getElementById('settings-panel');
+    if (panel.classList.contains('active')) {
+        panel.classList.remove('active');
+    } else {
+        panel.classList.add('active');
+        // Pre-fill inputs with current keys
+        document.getElementById('key-input').value = googleKey;
+        document.getElementById('openai-key-input').value = openaiKey;
+        document.getElementById('eleven-key-input').value = elevenKey;
+    }
+}
+
+function checkCustomModel() {
+    const select = document.getElementById('model-select');
+    document.getElementById('custom-model-container').style.display = (select.value === 'custom') ? 'block' : 'none';
+}
+
+function saveSettings() {
+    const gInput = document.getElementById('key-input').value.trim();
+    const oInput = document.getElementById('openai-key-input').value.trim();
+    const eInput = document.getElementById('eleven-key-input').value.trim();
+    const modelSelect = document.getElementById('model-select').value;
+    
+    // Save Google Key
+    if(gInput) { googleKey = gInput; localStorage.setItem('helix_google_key_v47', googleKey); }
+    // Save OpenAI Key
+    if(oInput) { openaiKey = oInput; localStorage.setItem('helix_openai_key_v47', openaiKey); }
+    // Save ElevenLabs Key
+    if(eInput) { elevenKey = eInput; localStorage.setItem('helix_eleven_key', elevenKey); }
+
+    currentModel = (modelSelect === 'custom') ? document.getElementById('custom-model-input').value.trim() : modelSelect;
+    localStorage.setItem('helix_model_v47', currentModel);
+    
+    document.getElementById('settings-panel').classList.remove('active');
+    updateModelBadge();
+    addMessage('system', `Config Updated. Model: ${currentModel}`, false);
+}
+
+// --- Audio & Logic ---
+function unlockAudioEngine() {
+    if (!audioContext) audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    if (audioContext.state === 'suspended') audioContext.resume();
+}
+
+async function speak(text) {
+    let cleanText = text.replace(/```[\s\S]*?```/g, " I've provided code below.").replace(/[*#]/g, '').slice(0, 500); 
+    if(!cleanText) return;
+
+    isSpeaking = true;
+    updateOrb('talking', 'SPEAKING');
+
+    if (elevenKey && elevenKey.length > 5) {
+        try {
+            const response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/21m00Tcm4TlvDq8ikWAM`, {
+                method: "POST",
+                headers: { "xi-api-key": elevenKey, "Content-Type": "application/json" },
+                body: JSON.stringify({ text: cleanText, model_id: "eleven_turbo_v2_5" })
+            });
+            if(response.ok) {
+                const audioBlob = await response.blob();
+                const audio = new Audio(URL.createObjectURL(audioBlob));
+                audio.onended = () => { isSpeaking = false; updateOrb('', 'HELIX'); if(conversationActive) startListening(); };
+                audio.play();
+                return;
+            }
+        } catch (e) { console.error("ElevenLabs Error"); }
+    }
+    fallbackSpeak(cleanText);
+}
+
+function fallbackSpeak(text) {
+    synth.cancel();
+    let u = new SpeechSynthesisUtterance(text);
+    u.onend = () => { isSpeaking = false; updateOrb('', 'HELIX'); if(conversationActive) startListening(); };
+    synth.speak(u);
+}
+
+// --- API Routing ---
+async function askAI(txt) {
+    const isGemini = currentModel.includes('gemini');
+    const key = isGemini ? googleKey : openaiKey;
+
+    if (!key || key.length < 5) {
+        addMessage('system', "❌ Missing API Key for this model.", false);
+        return;
+    }
+
+    addMessage('user', txt || "[Image Sent]", true);
+    updateOrb('thinking', 'THINKING');
+
+    if (isGemini) await askGemini(txt); else await askOpenAI(txt);
+}
+
+async function askOpenAI(txt) {
+    try {
+        let messages = [{ role: "system", content: isDevMode ? "Expert dev." : "Concise AI." }];
+        messages.push({ role: "user", content: txt });
+
+        let req = await fetch(`https://api.openai.com/v1/chat/completions`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${openaiKey}` },
+            body: JSON.stringify({ model: currentModel, messages })
+        });
+        let res = await req.json();
+        let ans = res.choices[0].message.content;
+        addMessage('model', ans, false);
+        speak(ans);
+    } catch(e) { addMessage('system', "OpenAI Error", false); }
+}
+
+async function askGemini(txt) {
+    try {
+        let userParts = [{ text: txt }];
+        if (currentImage) userParts.push({ inline_data: { mime_type: currentMimeType, data: currentImage } });
+        
+        let req = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${currentModel}:generateContent?key=${googleKey}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ contents: [{ role: 'user', parts: userParts }] })
+        });
+        let res = await req.json();
+        let ans = res.candidates[0].content.parts[0].text;
+        addMessage('model', ans, false);
+        speak(ans);
+    } catch(e) { addMessage('system', "Gemini Error", false); }
+}
+
+// --- Utility Functions ---
+function updateOrb(state, text) {
+    const orb = document.getElementById('core');
+    orb.className = state || '';
+    document.getElementById('orb-text').innerText = text;
+}
+
+function addMessage(role, text, skipScroll) {
+    const consoleDiv = document.getElementById('console');
+    const msgDiv = document.createElement('div');
+    msgDiv.classList.add('msg', (role === 'model' || role === 'assistant') ? 'ai' : role);
+    msgDiv.innerHTML = text.replace(/```([\s\S]*?)```/g, '<div class="code-block">$1</div>');
+    consoleDiv.appendChild(msgDiv);
+    if (!skipScroll) consoleDiv.scrollTop = consoleDiv.scrollHeight;
+}
+
+function loadHistory() {
+    const saved = localStorage.getItem('helix_history_v47');
+    if (saved) JSON.parse(saved).forEach(m => addMessage(m.role, m.text, true));
+}
+
+function clearConversation() {
+    localStorage.removeItem('helix_history_v47');
+    document.getElementById('console').innerHTML = '';
+}
+
+function sendText() {
+    let input = document.getElementById('txt-input');
+    if (input.value.trim()) { askAI(input.value.trim()); input.value = ""; }
+}
+
+// --- Camera & Gallery ---
+function handleImageSelect(e) {
+    const file = e.target.files[0];
+    const reader = new FileReader();
+    reader.onload = (re) => {
+        currentImage = re.target.result.split(',')[1];
+        currentMimeType = file.type;
+        document.getElementById('image-preview').style.backgroundImage = `url(${re.target.result})`;
+        document.getElementById('image-preview').style.display = 'block';
+    };
+    reader.readAsDataURL(file);
+}
+
+function startCamera() {
+    navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } }).then(s => {
+        videoStream = s;
+        document.getElementById('cam-feed').srcObject = s;
+        document.getElementById('camera-container').style.display = 'flex';
+    });
+}
+
+function snapPhoto() {
+    const video = document.getElementById('cam-feed');
+    const canvas = document.getElementById('cam-canvas');
+    canvas.width = video.videoWidth; canvas.height = video.videoHeight;
+    canvas.getContext('2d').drawImage(video, 0, 0);
+    currentImage = canvas.toDataURL('image/jpeg').split(',')[1];
+    currentMimeType = 'image/jpeg';
+    document.getElementById('image-preview').style.backgroundImage = `url(${canvas.toDataURL('image/jpeg')})`;
+    document.getElementById('image-preview').style.display = 'block';
+    videoStream.getTracks().forEach(t => t.stop());
+    document.getElementById('camera-container').style.display = 'none';
+}
+</script>
+</body>
+</html>
