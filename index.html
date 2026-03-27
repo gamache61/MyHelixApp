@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Helix App — Coding Assistant (Local-first)</title>
+  <style>
+    :root{
+      --bg:#f4f4f9;--card:#fff;--text:#111827;--muted:#6b7280;--border:#e5e7eb;
+      --primary:#2563eb;--primary2:#1d4ed8;--danger:#dc2626;--ok:#16a34a;
+      --mono:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace;
+    }
+    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;display:flex;justify-content:center;
+      padding:24px;background:var(--bg);color:var(--text);}
+    .container{background:var(--card);padding:1.25rem;border-radius:12px;box-shadow:0 6px 24px rgba(0,0,0,.08);
+      width:100%;max-width:720px;border:1px solid var(--border);}
+    h2{margin:0 0 8px;font-size:1.25rem}
+    .sub{margin:0 0 16px;color:var(--muted);font-size:.95rem;line-height:1.35}
+    .row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+    label{display:block;font-size:.85rem;color:var(--muted);margin:10px 0 6px}
+    input,textarea,select,button{width:100%;padding:10px 12px;border-radius:8px;border:1px solid var(--border);
+      font-size:14px;box-sizing:border-box}
+    textarea{min-height:110px;resize:vertical}
+    .mono{font-family:var(--mono);font-size:13px}
+    .actions{display:flex;gap:10px;align-items:center;margin-top:12px;flex-wrap:wrap}
+    button{background:var(--primary);color:#fff;border:none;cursor:pointer;font-weight:600}
+    button:hover{background:var(--primary2)}
+    button:disabled{opacity:.6;cursor:not-allowed}
+    .ghost{background:transparent;border:1px solid var(--border);color:var(--text);font-weight:600}
+    .ghost:hover{background:#f9fafb}
+    .pill{display:inline-flex;gap:8px;align-items:center;padding:6px 10px;border:1px solid var(--border);
+      border-radius:999px;font-size:12px;color:var(--muted);background:#fafafa}
+    .status-dot{width:8px;height:8px;border-radius:999px;background:var(--muted);display:inline-block}
+    .status-dot.ok{background:var(--ok)}
+    .status-dot.bad{background:var(--danger)}
+    #response{margin-top:14px;white-space:pre-wrap;background:#0b1020;color:#e5e7eb;padding:12px;border-radius:10px;
+      border:1px solid rgba(255,255,255,.08);min-height:120px;font-family:var(--mono);font-size:13px;line-height:1.45}
+    .hint{margin-top:10px;color:var(--muted);font-size:.85rem;line-height:1.35}
+    .warn{margin-top:10px;padding:10px;border:1px solid #fecaca;background:#fff1f2;color:#7f1d1d;border-radius:10px;
+      font-size:.9rem;display:none}
+    @media (max-width:640px){.row{grid-template-columns:1fr}}
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h2>Helix App — Coding Assistant (Local-first)</h2>
+    <p class="sub">
+      This UI can talk to a <b>local OpenAI-compatible server</b> (recommended) or to remote OpenAI.
+      For privacy, keep your code on-device by using <span class="mono">http://localhost:8000</span>.
+    </p>
+
+    <div class="row">
+      <div>
+        <label for="mode">Mode</label>
+        <select id="mode">
+          <option value="local" selected>Local (no API key)</option>
+          <option value="remote">Remote OpenAI (API key required)</option>
+        </select>
+      </div>
+      <div>
+        <label for="endpoint">Endpoint</label>
+        <input class="mono" id="endpoint" type="text" value="http://localhost:8000/v1/chat/completions" />
+      </div>
+    </div>
+
+    <div class="row">
+      <div>
+        <label for="model">Model</label>
+        <input class="mono" id="model" type="text" value="gpt-4o-mini" />
+      </div>
+      <div>
+        <label for="temperature">Temperature</label>
+        <input id="temperature" type="number" min="0" max="2" step="0.1" value="0.2" />
+      </div>
+    </div>
+
+    <div id="apiKeyBlock" style="display:none;">
+      <label for="apiKey">OpenAI API Key (remote mode only)</label>
+      <input class="mono" type="password" id="apiKey" placeholder="sk-..." autocomplete="off" />
+    </div>
+
+    <label for="system">System (coding style / rules)</label>
+    <textarea id="system" class="mono">You are a coding-specialized assistant. Prioritize correctness, security, and minimal diffs. If unsure, say so. When generating code, include brief comments and suggest tests.</textarea>
+
+    <label for="userInput">Prompt</label>
+    <textarea id="userInput" placeholder="Ask something like: 'Refactor X to be easier to test' or 'Write unit tests for save/load'"></textarea>
+
+    <div class="actions">
+      <button id="sendBtn" onclick="callLLM()">Send</button>
+      <button class="ghost" onclick="copyResponse()">Copy response</button>
+      <span class="pill"><span id="statusDot" class="status-dot"></span><span id="statusText">Idle</span></span>
+    </div>
+
+    <div id="warn" class="warn"></div>
+    <div id="response">Response will appear here...</div>
+
+    <p class="hint">
+      <b>Tip:</b> Local mode expects an OpenAI-compatible server that supports <span class="mono">/v1/chat/completions</span>.
+      Remote mode uses <span class="mono">https://api.openai.com/v1/chat/completions</span>.
+    </p>
+  </div>
+
+  <script>
+    const modeEl = document.getElementById('mode');
+    const endpointEl = document.getElementById('endpoint');
+    const apiKeyBlock = document.getElementById('apiKeyBlock');
+    const apiKeyEl = document.getElementById('apiKey');
+    const modelEl = document.getElementById('model');
+    const tempEl = document.getElementById('temperature');
+    const systemEl = document.getElementById('system');
+    const userEl = document.getElementById('userInput');
+    const responseDiv = document.getElementById('response');
+    const warnDiv = document.getElementById('warn');
+    const sendBtn = document.getElementById('sendBtn');
+    const statusDot = document.getElementById('statusDot');
+    const statusText = document.getElementById('statusText');
+
+    function setStatus(state, text) {
+      statusDot.classList.remove('ok','bad');
+      if (state === 'ok') statusDot.classList.add('ok');
+      if (state === 'bad') statusDot.classList.add('bad');
+      statusText.textContent = text;
+    }
+    function showWarn(msg){ warnDiv.style.display='block'; warnDiv.textContent=msg; }
+    function clearWarn(){ warnDiv.style.display='none'; warnDiv.textContent=''; }
+
+    function syncModeUI() {
+      const isRemote = modeEl.value === 'remote';
+      apiKeyBlock.style.display = isRemote ? 'block' : 'none';
+
+      // Auto-switch endpoint to match mode
+      if (isRemote && endpointEl.value.includes('localhost')) {
+        endpointEl.value = 'https://api.openai.com/v1/chat/completions';
+      }
+      if (!isRemote && endpointEl.value.includes('api.openai.com')) {
+        endpointEl.value = 'http://localhost:8000/v1/chat/completions';
+      }
+
+      clearWarn();
+      setStatus('idle','Idle');
+    }
+    modeEl.addEventListener('change', syncModeUI);
+    syncModeUI();
+
+    async function callLLM() {
+      clearWarn();
+
+      const mode = modeEl.value;
+      const endpoint = endpointEl.value.trim();
+      const model = modelEl.value.trim();
+      const temperature = Number(tempEl.value);
+      const system = systemEl.value.trim();
+      const prompt = userEl.value.trim();
+
+      if (!endpoint) return showWarn('Please provide an endpoint.');
+      if (!model) return showWarn('Please provide a model name.');
+      if (!prompt) return showWarn('Please type a prompt.');
+      if (mode === 'remote' && !apiKeyEl.value.trim()) return showWarn('Remote mode requires an OpenAI API key.');
+
+      sendBtn.disabled = true;
+      responseDiv.textContent = 'Thinking...';
+      setStatus('idle','Working');
+
+      const headers = { 'Content-Type': 'application/json' };
+      if (mode === 'remote') headers['Authorization'] = `Bearer ${apiKeyEl.value.trim()}`;
+
+      const body = {
+        model,
+        temperature: Number.isFinite(temperature) ? temperature : 0.2,
+        messages: [
+          ...(system ? [{ role: 'system', content: system }] : []),
+          { role: 'user', content: prompt }
+        ]
+      };
+
+      try {
+        const res = await fetch(endpoint, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify(body)
+        });
+
+        const data = await res.json().catch(() => ({}));
+
+        if (!res.ok) {
+          const msg = data?.error?.message ? data.error.message : `Request failed (${res.status}).`;
+          responseDiv.textContent = `Error: ${msg}`;
+          setStatus('bad','Error');
+
+          if (mode === 'local') {
+            showWarn('Local mode: make sure your local server is running and supports /v1/chat/completions. CORS may also be required.');
+          }
+          return;
+        }
+
+        const text = data?.choices?.[0]?.message?.content;
+        if (typeof text === 'string' && text.length) {
+          responseDiv.textContent = text;
+          setStatus('ok','Done');
+        } else {
+          responseDiv.textContent = 'No content returned. Raw response:\n' + JSON.stringify(data, null, 2);
+          setStatus('bad','No content');
+        }
+      } catch (err) {
+        console.error(err);
+        responseDiv.textContent = 'Error connecting to endpoint.';
+        setStatus('bad','Network error');
+
+        if (mode === 'local') {
+          showWarn("Local mode: check endpoint reachability. If you're running a local server, ensure it allows browser requests (CORS).");
+        }
+      } finally {
+        sendBtn.disabled = false;
+      }
+    }
+
+    async function copyResponse() {
+      try {
+        await navigator.clipboard.writeText(responseDiv.textContent || '');
+        setStatus('ok','Copied');
+        setTimeout(() => setStatus('idle','Idle'), 1200);
+      } catch {
+        showWarn('Copy failed (clipboard permissions).');
+      }
+    }
+  </script>
+</body>
+</html>
